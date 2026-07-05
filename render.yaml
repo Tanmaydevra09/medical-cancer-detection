@@ -1,0 +1,26 @@
+services:
+  # Backend Web Service
+  - type: web
+    name: medical-cancer-detection-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    region: oregon
+    plan: standard # Or higher depending on ML model requirements
+    healthCheckPath: /health/db
+    envVars:
+      - key: MONGO_URI
+        sync: false # Set this in the Render Dashboard
+
+  # Frontend Static Site
+  - type: web
+    name: medical-cancer-detection-frontend
+    env: static
+    region: oregon
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        fromService:
+          type: web
+          name: medical-cancer-detection-backend
+          envVarKey: RENDER_EXTERNAL_URL

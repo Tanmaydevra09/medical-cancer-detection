@@ -1,0 +1,23 @@
+# source venv_backend/bin/activate
+# python brain/predict_single_image.py
+
+# backend
+# Activate the backend virtual environment
+source venv_backend/bin/activate
+
+# Start the Flask API
+python backend/app.py
+
+
+#frontend
+# Navigate to the frontend directory
+cd frontend
+
+# Start the React application
+npm start
+
+
+FOR DATABASE
+# mysql -u root -p
+#  show DATABASES;
+#  USE medical_cancer_detection;
