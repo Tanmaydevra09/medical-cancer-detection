@@ -5,7 +5,7 @@ services:
     env: docker
     dockerfilePath: ./backend/Dockerfile
     region: oregon
-    plan: standard # Or higher depending on ML model requirements
+    plan: free # Or higher depending on ML model requirements
     healthCheckPath: /health/db
     envVars:
       - key: MONGO_URI
