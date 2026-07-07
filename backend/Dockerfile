@@ -23,4 +23,4 @@ ENV FLASK_APP=backend/app.py
 EXPOSE 5000
 
 # Start Gunicorn server
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "120", "backend.app:app"]
+CMD gunicorn -w 1 -b 0.0.0.0:${PORT:-5000} --timeout 120 backend.app:app
