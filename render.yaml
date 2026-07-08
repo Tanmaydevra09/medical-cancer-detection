@@ -19,7 +19,7 @@ services:
     buildCommand: npm install && CI=false npm run build
     staticPublishPath: ./build
     envVars:
-      - key: REACT_APP_API_URL
+      - key: REACT_APP_API_BASE_URL
         fromService:
           type: web
           name: medical-cancer-detection-backend
