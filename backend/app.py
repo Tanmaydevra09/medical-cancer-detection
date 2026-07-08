@@ -249,10 +249,25 @@ def _log_blood_prediction(user_id, payload, result, confidence, execution_time):
     try:
         record_result = db.Blood_Data.insert_one({
             "user_id": ObjectId(user_id) if len(str(user_id)) == 24 else user_id,
-            "feature1": _safe_float(payload.get("WBC_Count")),
-            "feature2": _safe_float(payload.get("RBC_Count")),
-            "feature3": _safe_float(payload.get("Platelet_Count")),
+            "Age": _safe_float(payload.get("Age")),
+            "Gender": payload.get("Gender"),
+            "Country": payload.get("Country"),
+            "WBC_Count": _safe_float(payload.get("WBC_Count")),
+            "RBC_Count": _safe_float(payload.get("RBC_Count")),
+            "Platelet_Count": _safe_float(payload.get("Platelet_Count")),
+            "Hemoglobin_Level": _safe_float(payload.get("Hemoglobin_Level")),
+            "Bone_Marrow_Blasts": _safe_float(payload.get("Bone_Marrow_Blasts")),
+            "BMI": _safe_float(payload.get("BMI")),
+            "Genetic_Mutation": payload.get("Genetic_Mutation"),
+            "Family_History": payload.get("Family_History"),
+            "Smoking_Status": payload.get("Smoking_Status"),
+            "Alcohol_Consumption": payload.get("Alcohol_Consumption"),
+            "Radiation_Exposure": payload.get("Radiation_Exposure"),
+            "Infection_History": payload.get("Infection_History"),
+            "Chronic_Illness": payload.get("Chronic_Illness"),
+            "Immune_Disorders": payload.get("Immune_Disorders"),
             "result": result,
+            "confidence": confidence,
             "date": datetime.datetime.utcnow()
         })
         record_id = str(record_result.inserted_id)
