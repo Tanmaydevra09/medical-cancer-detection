@@ -15,8 +15,9 @@ services:
   - type: web
     name: medical-cancer-detection-frontend
     env: static
-    buildCommand: cd frontend && npm install && CI=false npm run build
-    staticPublishPath: ./frontend/build
+    rootDir: ./frontend
+    buildCommand: npm install && CI=false npm run build
+    staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
         fromService:
