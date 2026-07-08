@@ -173,7 +173,7 @@ breast_classes = ["No Cancer", "Cancer"]
 
 def _get_db_connection():
     client = MongoClient(MONGO_URI)
-    db = client.get_database()
+    db = client.get_database("medical_cancer_detection")
     return client, db
 
 
