@@ -107,6 +107,8 @@ def _run_image_model_subprocess(task, image_bytes):
             raise RuntimeError(f"Invalid result structure from {task} model: {result}")
             
         return result
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Model subprocess failed with exit code {e.returncode}. Stderr: {e.stderr}")
     except json.JSONDecodeError as e:
         raise RuntimeError(f"Invalid JSON output from {task} model: {e}")
     finally:

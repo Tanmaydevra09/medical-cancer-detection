@@ -1,7 +1,12 @@
 import argparse
 import json
+import os
 import numpy as np
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
+# Limit threading overhead to reduce memory usage on small instances
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
 from PIL import Image, ImageOps
 import cv2
 
