@@ -66,56 +66,52 @@ def _mock_lung_prediction(img_array):
 
 
 def _run_image_model_subprocess(task, image_bytes):
+    import tensorflow as tf
+    import gc
+    from PIL import Image, ImageOps
+    from io import BytesIO
+    from backend.predict_image_runtime import preprocess_for_model, LUNG_CLASSES
+
     model_paths = {
         "brain": str(ROOT_DIR / "brain" / "brain_binary_efficientnet_clahe.keras"),
         "lung": str(ROOT_DIR / "lung" / "lung_cancer_efficientnet_clahe.keras"),
         "breast": str(ROOT_DIR / "breast" / "breast_cancer_efficientnet_clahe.keras"),
     }
-    python_bin = LUNG_MODEL_PYTHON if task == "lung" else IMAGE_MODEL_PYTHON
     model_path = model_paths[task]
 
-    # Check if model file exists
     if not _os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        tmp.write(image_bytes)
-        temp_image_path = tmp.name
+    # Load image directly from bytes
+    image = Image.open(BytesIO(image_bytes))
+    image = ImageOps.exif_transpose(image)
+    image = image.convert("RGB")
+    image = image.resize((224, 224))
+
+    # Preprocess
+    arr = preprocess_for_model(image)
+
+    # Load model
+    model = tf.keras.models.load_model(model_path, compile=False, safe_mode=False)
 
     try:
-        proc = subprocess.run(
-            [
-                python_bin,
-                RUNTIME_SCRIPT,
-                "--task", task,
-                "--model-path", model_path,
-                "--image-path", temp_image_path,
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=str(BACKEND_DIR),
-        )
-        lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
-        if not lines:
-            raise RuntimeError(f"Empty output from {task} model")
-        
-        result = json.loads(lines[-1])
-        
-        # Validate result structure
-        if "prediction" not in result or "confidence" not in result:
-            raise RuntimeError(f"Invalid result structure from {task} model: {result}")
-            
-        return result
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Model subprocess failed with exit code {e.returncode}. Stderr: {e.stderr}")
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Invalid JSON output from {task} model: {e}")
+        if task == "brain" or task == "breast":
+            pred = float(model.predict(arr, verbose=0)[0][0])
+            if pred >= 0.5:
+                result = {"prediction": "Cancer", "confidence": round(pred * 100, 2)}
+            else:
+                result = {"prediction": "No Cancer", "confidence": round((1 - pred) * 100, 2)}
+        elif task == "lung":
+            preds = model.predict(arr, verbose=0)[0]
+            idx = int(np.argmax(preds))
+            result = {"prediction": LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
     finally:
-        try:
-            _os.remove(temp_image_path)
-        except OSError:
-            pass
+        # Aggressively free memory to prevent OOM on Render
+        del model
+        tf.keras.backend.clear_session()
+        gc.collect()
+
+    return result
 
 
 def _run_blood_model_subprocess(payload):
