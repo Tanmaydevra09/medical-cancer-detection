@@ -483,6 +483,10 @@ def db_health():
     except PyMongoError as err:
         return jsonify({"ok": False, "error": str(err)}), 500
 
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"ok": True, "status": "running", "version": "1.0"})
+
 if __name__ == "__main__":
     try:
         init_database()

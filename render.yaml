@@ -6,7 +6,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     region: oregon
     plan: free # Or higher depending on ML model requirements
-    healthCheckPath: /health/db
+    healthCheckPath: /health
     envVars:
       - key: MONGO_URI
         sync: false # Set this in the Render Dashboard
