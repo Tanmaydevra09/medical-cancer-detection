@@ -10,12 +10,7 @@ import tempfile
 from pathlib import Path
 import time
 import gc
-
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress TF info logs
-import tensorflow as tf
-tf.config.threading.set_intra_op_parallelism_threads(2)
-tf.config.threading.set_inter_op_parallelism_threads(2)
+import onnxruntime as ort
 
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -98,48 +93,47 @@ def _preprocess_for_model(pil_image):
 
 _LUNG_CLASSES = ["Adenocarcinoma", "Large Cell Carcinoma", "Normal", "Squamous Cell Carcinoma", "Other"]
 
-# ---- Model cache: keeps one model loaded per task to avoid re-loading on every request ----
-_model_cache: dict = {}  # task -> loaded tf.keras.Model
+# ---- ONNX model cache: ~30MB RAM per session vs ~300MB for TF ----
+_ort_cache: dict = {}  # task -> ort.InferenceSession
 
-def _get_or_load_model(task: str, model_path: str):
-    """Load the model once and cache it. Evict previous model if task changes."""
-    if task not in _model_cache:
-        # Free any model for a different task first to stay within Render's 512MB RAM
-        for cached_task in list(_model_cache.keys()):
-            del _model_cache[cached_task]
-        tf.keras.backend.clear_session()
-        gc.collect()
-        if not _os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found: {model_path}. ROOT_DIR={ROOT_DIR}")
-        _model_cache[task] = tf.keras.models.load_model(model_path, compile=False, safe_mode=False)
-    return _model_cache[task]
+def _get_or_load_ort_session(task: str) -> ort.InferenceSession:
+    """Load ONNX model once and cache. Uses ~30MB RAM vs TF's ~300MB."""
+    if task not in _ort_cache:
+        onnx_paths = {
+            "brain":  str(ROOT_DIR / "brain"  / "brain.onnx"),
+            "lung":   str(ROOT_DIR / "lung"   / "lung.onnx"),
+            "breast": str(ROOT_DIR / "breast" / "breast.onnx"),
+        }
+        path = onnx_paths[task]
+        if not _os.path.exists(path):
+            raise FileNotFoundError(f"ONNX model not found: {path}. ROOT_DIR={ROOT_DIR}")
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2
+        opts.inter_op_num_threads = 2
+        _ort_cache[task] = ort.InferenceSession(path, sess_options=opts, providers=["CPUExecutionProvider"])
+    return _ort_cache[task]
 
 
 def _run_image_model_subprocess(task, image_bytes):
-    model_paths = {
-        "brain": str(ROOT_DIR / "brain" / "brain_binary_efficientnet_clahe.keras"),
-        "lung": str(ROOT_DIR / "lung" / "lung_cancer_efficientnet_clahe.keras"),
-        "breast": str(ROOT_DIR / "breast" / "breast_cancer_efficientnet_clahe.keras"),
-    }
-    model_path = model_paths[task]
-
-    # Load image
+    """Run inference via ONNX Runtime — uses ~30MB RAM, safe for Render free tier."""
+    # Load and preprocess image
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image)
     image = image.convert("RGB")
     image = image.resize((224, 224))
-    arr = _preprocess_for_model(image)
+    arr = _preprocess_for_model(image)  # shape (1,224,224,3), float32 [0,255]
 
-    # Get cached model (loads once, reused on subsequent requests)
-    model = _get_or_load_model(task, model_path)
+    session = _get_or_load_ort_session(task)
+    input_name = session.get_inputs()[0].name
+    outputs = session.run(None, {input_name: arr})
 
     if task == "brain" or task == "breast":
-        pred = float(model.predict(arr, verbose=0)[0][0])
+        pred = float(outputs[0][0][0])
         if pred >= 0.5:
             return {"prediction": "Cancer", "confidence": round(pred * 100, 2)}
         return {"prediction": "No Cancer", "confidence": round((1 - pred) * 100, 2)}
     elif task == "lung":
-        preds = model.predict(arr, verbose=0)[0]
+        preds = outputs[0][0]
         idx = int(np.argmax(preds))
         return {"prediction": _LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
     else:
