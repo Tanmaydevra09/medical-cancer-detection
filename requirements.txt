@@ -22,9 +22,7 @@ idna==3.11
 ImageIO==2.37.2
 immutabledict==4.2.2
 importlib_resources==6.5.2
-keras==2.13.1
-keras-core==0.1.7
-keras-cv==0.6.0
+keras>=3.0.0
 kiwisolver==1.4.9
 lazy_loader==0.4
 libclang==18.1.1
@@ -61,9 +59,8 @@ simple-parsing==0.1.7
 six==1.17.0
 tensorboard==2.13.0
 tensorboard-data-server==0.7.2
-tensorflow==2.13.0
+tensorflow==2.16.1
 tensorflow-datasets==4.9.9
-tensorflow-estimator==2.13.0
 tensorflow-metadata==1.17.3
 termcolor==3.3.0
 tifffile==2025.5.10
