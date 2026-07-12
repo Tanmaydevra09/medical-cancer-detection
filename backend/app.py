@@ -65,12 +65,36 @@ def _mock_lung_prediction(img_array):
     raise RuntimeError("Mock predictions disabled. Please ensure ML models are properly configured.")
 
 
+# Inline CLAHE + preprocessing (avoids fragile cross-module import that breaks in Docker)
+def _apply_clahe(image_array):
+    import cv2
+    try:
+        if image_array.dtype != np.uint8:
+            image_array = image_array.astype(np.uint8)
+        lab = cv2.cvtColor(image_array, cv2.COLOR_RGB2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        merged = cv2.merge((cl, a, b))
+        enhanced = cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
+        return enhanced.astype(np.uint8)
+    except Exception:
+        return image_array.astype(np.uint8)
+
+
+def _preprocess_for_model(pil_image):
+    arr = np.array(pil_image).astype(np.uint8)
+    arr = _apply_clahe(arr)
+    arr = arr.astype(np.float32)  # keep [0,255] — EfficientNet rescales internally
+    return np.expand_dims(arr, axis=0)  # (1,224,224,3)
+
+
+_LUNG_CLASSES = ["Adenocarcinoma", "Large Cell Carcinoma", "Normal", "Squamous Cell Carcinoma", "Other"]
+
+
 def _run_image_model_subprocess(task, image_bytes):
     import tensorflow as tf
     import gc
-    from PIL import Image, ImageOps
-    from io import BytesIO
-    from backend.predict_image_runtime import preprocess_for_model, LUNG_CLASSES
 
     model_paths = {
         "brain": str(ROOT_DIR / "brain" / "brain_binary_efficientnet_clahe.keras"),
@@ -80,7 +104,7 @@ def _run_image_model_subprocess(task, image_bytes):
     model_path = model_paths[task]
 
     if not _os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        raise FileNotFoundError(f"Model file not found: {model_path}. ROOT_DIR={ROOT_DIR}")
 
     # Load image directly from bytes
     image = Image.open(BytesIO(image_bytes))
@@ -88,10 +112,8 @@ def _run_image_model_subprocess(task, image_bytes):
     image = image.convert("RGB")
     image = image.resize((224, 224))
 
-    # Preprocess
-    arr = preprocess_for_model(image)
+    arr = _preprocess_for_model(image)
 
-    # Load model
     model = tf.keras.models.load_model(model_path, compile=False, safe_mode=False)
 
     try:
@@ -104,9 +126,10 @@ def _run_image_model_subprocess(task, image_bytes):
         elif task == "lung":
             preds = model.predict(arr, verbose=0)[0]
             idx = int(np.argmax(preds))
-            result = {"prediction": LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
+            result = {"prediction": _LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
+        else:
+            raise ValueError(f"Unknown task: {task}")
     finally:
-        # Aggressively free memory to prevent OOM on Render
         del model
         tf.keras.backend.clear_session()
         gc.collect()
