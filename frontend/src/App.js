@@ -156,15 +156,27 @@ function App() {
         Bone_Marrow_Blasts: parseInt(bloodForm.Bone_Marrow_Blasts) || 0,
         BMI: parseFloat(bloodForm.BMI) || 0
       };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 300000);
       const response = await fetch(`${API_BASE_URL}/predict/blood`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
       const data = await response.json();
       setBloodResult(data);
     } catch (err) {
-      alert('Backend not reachable. Please ensure the Flask server is running.');
+      if (err.name === 'AbortError') {
+        setBloodResult({ error: 'Request timed out. The server may be starting up (free tier). Please try again in 30 seconds.' });
+      } else {
+        setBloodResult({ error: `Analysis failed: ${err.message}` });
+      }
     }
     setIsBloodAnalyzing(false);
   };
@@ -518,14 +530,26 @@ function App() {
           : `${API_BASE_URL}/predict/breast`;
 
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 300000); // 5-min timeout for Render cold-start
       const response = await fetch(url, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timer);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
       const data = await response.json();
       setResult(data);
     } catch (error) {
-      alert("Backend not reachable. Please ensure the server is running.");
+      if (error.name === "AbortError") {
+        setResult({ error: "Request timed out. The server may be starting up (free tier). Please try again in 30 seconds." });
+      } else {
+        setResult({ error: `Analysis failed: ${error.message}` });
+      }
     }
     setIsAnalyzing(false);
   };
