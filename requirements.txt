@@ -40,7 +40,7 @@ opt_einsum==3.4.0
 packaging==25.0
 pillow==12.1.0
 promise==2.3
-protobuf==4.25.8
+protobuf
 psutil==7.2.1
 pyarrow==23.0.0
 pyasn1==0.6.2
@@ -57,11 +57,11 @@ scikit-image==0.25.2
 scipy==1.15.3
 simple-parsing==0.1.7
 six==1.17.0
-tensorboard==2.13.0
-tensorboard-data-server==0.7.2
+tensorboard
+tensorboard-data-server
 tensorflow==2.16.1
-tensorflow-datasets==4.9.9
-tensorflow-metadata==1.17.3
+tensorflow-datasets
+tensorflow-metadata
 termcolor==3.3.0
 tifffile==2025.5.10
 toml==0.10.2
