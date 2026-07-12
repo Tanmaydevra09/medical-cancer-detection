@@ -9,6 +9,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 import time
+import gc
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress TF info logs
+import tensorflow as tf
+tf.config.threading.set_intra_op_parallelism_threads(2)
+tf.config.threading.set_inter_op_parallelism_threads(2)
 
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -91,11 +98,24 @@ def _preprocess_for_model(pil_image):
 
 _LUNG_CLASSES = ["Adenocarcinoma", "Large Cell Carcinoma", "Normal", "Squamous Cell Carcinoma", "Other"]
 
+# ---- Model cache: keeps one model loaded per task to avoid re-loading on every request ----
+_model_cache: dict = {}  # task -> loaded tf.keras.Model
+
+def _get_or_load_model(task: str, model_path: str):
+    """Load the model once and cache it. Evict previous model if task changes."""
+    if task not in _model_cache:
+        # Free any model for a different task first to stay within Render's 512MB RAM
+        for cached_task in list(_model_cache.keys()):
+            del _model_cache[cached_task]
+        tf.keras.backend.clear_session()
+        gc.collect()
+        if not _os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}. ROOT_DIR={ROOT_DIR}")
+        _model_cache[task] = tf.keras.models.load_model(model_path, compile=False, safe_mode=False)
+    return _model_cache[task]
+
 
 def _run_image_model_subprocess(task, image_bytes):
-    import tensorflow as tf
-    import gc
-
     model_paths = {
         "brain": str(ROOT_DIR / "brain" / "brain_binary_efficientnet_clahe.keras"),
         "lung": str(ROOT_DIR / "lung" / "lung_cancer_efficientnet_clahe.keras"),
@@ -103,38 +123,27 @@ def _run_image_model_subprocess(task, image_bytes):
     }
     model_path = model_paths[task]
 
-    if not _os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}. ROOT_DIR={ROOT_DIR}")
-
-    # Load image directly from bytes
+    # Load image
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image)
     image = image.convert("RGB")
     image = image.resize((224, 224))
-
     arr = _preprocess_for_model(image)
 
-    model = tf.keras.models.load_model(model_path, compile=False, safe_mode=False)
+    # Get cached model (loads once, reused on subsequent requests)
+    model = _get_or_load_model(task, model_path)
 
-    try:
-        if task == "brain" or task == "breast":
-            pred = float(model.predict(arr, verbose=0)[0][0])
-            if pred >= 0.5:
-                result = {"prediction": "Cancer", "confidence": round(pred * 100, 2)}
-            else:
-                result = {"prediction": "No Cancer", "confidence": round((1 - pred) * 100, 2)}
-        elif task == "lung":
-            preds = model.predict(arr, verbose=0)[0]
-            idx = int(np.argmax(preds))
-            result = {"prediction": _LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
-        else:
-            raise ValueError(f"Unknown task: {task}")
-    finally:
-        del model
-        tf.keras.backend.clear_session()
-        gc.collect()
-
-    return result
+    if task == "brain" or task == "breast":
+        pred = float(model.predict(arr, verbose=0)[0][0])
+        if pred >= 0.5:
+            return {"prediction": "Cancer", "confidence": round(pred * 100, 2)}
+        return {"prediction": "No Cancer", "confidence": round((1 - pred) * 100, 2)}
+    elif task == "lung":
+        preds = model.predict(arr, verbose=0)[0]
+        idx = int(np.argmax(preds))
+        return {"prediction": _LUNG_CLASSES[idx], "confidence": round(float(preds[idx] * 100), 2)}
+    else:
+        raise ValueError(f"Unknown task: {task}")
 
 
 def _run_blood_model_subprocess(payload):
